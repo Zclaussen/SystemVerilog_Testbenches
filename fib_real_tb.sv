@@ -109,14 +109,13 @@ class scoreboard #(parameter int INPUT_WIDTH, parameter int OUTPUT_WIDTH);
         forever begin
             fib_item2 #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) item;
             scoreboard_mailbox.get(item);
-
             reference = model(item.n);
             if(item.result == reference) begin
                 $display("Time %0t [Scoreboard] Test passed for input = h%h", $time, item.n);
                 passed++;
             end
             else begin
-                $display("Time %0t [Scoreboard] Test failed: result = %0d instead of %0d for input = h%h.", $time, item.result, reference, item.n);
+                $display("Time %0t [Scoreboard] Test failed: result = %0h instead of %0h for input = h%h.", $time, item.result, reference, item.n);
                 failed ++;      
             end
         end
@@ -177,7 +176,7 @@ endclass
 module fib_real_tb;
     localparam NUM_TESTS = 1000;
     localparam INPUT_WIDTH = 6;
-    localparam OUTPUT_WIDTH = 16;
+    localparam OUTPUT_WIDTH = 63;
 
     logic clk;
 

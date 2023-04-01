@@ -80,9 +80,9 @@ module fib_bad
 	      done_r <= 1'b0;
 	      
 	      if (i_r <= n)
-		state_r <= COMPUTE;
+			state_r <= COMPUTE;
 	      else
-		state_r <= DONE;	   
+			state_r <= DONE;	   
 	   end
 	   
 	   COMPUTE : begin	      
@@ -140,8 +140,86 @@ module fib_good
     output logic 		    overflow,
     output logic 		    done
    );
-
    
+   typedef enum {START, COMPUTE, RESTART} state_t;
+   state_t state_r;   
+   
+   logic [$bits(n)-1:0] i_r;
+   logic [$bits(n)-1:0] n_r;
+   logic [$bits(result)-1:0] x_r;
+   logic [$bits(result)-1:0] y_r;
+   logic [$bits(result):0] full_add_r;  
+   logic [$bits(n)-1:0] check;
+
+   logic [$bits(result)-1:0] result_r;   
+   logic 		     done_r, overflow_r;
+
+   assign done = done_r;
+   assign result = result_r;
+   assign overflow = overflow_r;
+         
+   always_ff @(posedge clk or posedge rst) begin
+      if (rst) begin
+		  state_r <= START;
+			result_r <= '0;
+			done_r <= 1'b0;
+			i_r <= '0;
+			x_r <= '0;
+			y_r <= '0;
+			n_r <= '0;
+			overflow_r <= 1'b0;
+			full_add_r <= '0;	 
+      end
+      else begin
+       
+	 case (state_r)
+	   START : begin
+		  done_r <= '0;
+		  n_r <= n;
+	      i_r <= 3;
+	      x_r <= '0;
+	      y_r <= 1;	   	      
+	      if (go == 1'b1) state_r <= COMPUTE;	      
+	   end
+	   
+	   COMPUTE : begin	 
+	      done_r <= 1'b0;
+		  if(i_r < n_r) begin
+			x_r <= y_r;
+			full_add_r = x_r + y_r;
+			i_r <= i_r + 1'b1;
+			if (full_add_r[OUTPUT_WIDTH]) overflow_r <= 1'b1;	      
+			y_r <= full_add_r;	      
+		  end
+		  else begin
+		    x_r <= y_r;
+			full_add_r = x_r + y_r;
+			if (full_add_r[OUTPUT_WIDTH]) overflow_r <= 1'b1;	      
+			y_r <= full_add_r;	      
+			state_r <= RESTART;
+		  end
+	   end
+
+	   RESTART : begin
+		  if (n_r < 2)
+			result_r <= x_r;
+	      else
+			result_r <= y_r;
+			
+		  done_r <= 1'b1;
+		  n_r <= n;
+	      
+	      if (go == 1'b1) begin
+		    done_r <= '0;
+		    i_r <= 3;
+			x_r <= '0;
+			y_r <= 1;
+			state_r <= COMPUTE; 
+		  end
+	   end
+	 endcase
+	 end
+	 end
 endmodule
 
 
@@ -163,7 +241,7 @@ module fib
     output logic 		    done
    );
 
-   fib_bad #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) top (.*);
-   //fib_good #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) top (.*);
+   //fib_bad #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) top (.*);
+   fib_good #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) top (.*);
    
 endmodule
