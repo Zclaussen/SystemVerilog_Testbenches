@@ -59,8 +59,11 @@ endclass
 
 class fib_item2 #(INPUT_WIDTH, OUTPUT_WIDTH);
     rand bit [INPUT_WIDTH-1:0] n;
+    rand bit go;
     bit [OUTPUT_WIDTH-1:0] result;
     bit overflow;
+
+    constraint c_go_dist {go dist{0 :/ 90, 1:/ 10};}
 endclass
 
 class monitor #(parameter int INPUT_WIDTH, parameter int OUTPUT_WIDTH);
@@ -76,6 +79,7 @@ class monitor #(parameter int INPUT_WIDTH, parameter int OUTPUT_WIDTH);
             item.n = vif.n;
             item.result = vif.result;
             item.overflow = vif.overflow;
+            item.go = vif.go;
 
             $display("Time %0t [Monitor]: Monitor detected result=%0d for n=h%h.", $time, vif.result, vif.n);
             scoreboard_mailbox.put(item);
@@ -204,12 +208,32 @@ module fib_real_tb;
     fib_if #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) _if (.clk(clk));
     fib #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) DUT (.clk(clk), .rst(_if.rst), .go(_if.go), .done(_if.done), .n(_if.n), .result(_if.result), .overflow(_if.overflow));
 
+    covergroup cg @(posedge clk);
+        //Overflow should be asserted at least 10 times
+        cp_overflow: coverpoint _if.overflow {bins asserted={1'b1}; option.at_least = 10;}
+
+        //2**INPUT_WIDTH values of n tested at least once
+        cp_n: coverpoint _if.n {bins n_bins[] = {[0:2**INPUT_WIDTH-1]};}
+
+        //Go should be asserted at least 100 times when the circuit is actively computing a value (i.e., go has been asserted previously and done = 0)
+        cp_go_active: coverpoint {_if.go == 1 && _if.done == 0} {bins asserted={1'b1}; option.at_least = 100;}
+
+        //While the circuit is actively computing a value (i.e. go has been asserted previously and done=0), the data input n should change at least 100 times
+        //cp_n_active: coverpoint _if.n {bins n_bins[] = {[0:2**INPUT_WIDTH-1]}; option.at_least = 100; option.condition = {_if.done == 0};}
+
+        
+    endgroup
+
+
     initial begin : generate_clock
         clk = 1'b0;
         while(1) #5 clk = ~clk;
     end
 
+    cg cg_inst;
+
     initial begin
+        cg_inst = new();
         $timeformat(-9, 0, " ns");
 
         _env.vif = _if;
@@ -222,6 +246,8 @@ module fib_real_tb;
         @(posedge clk);
 
         _env.run();
+
+        $display("Coverage = %0.2f %%", cg_inst.get_inst_coverage());
         disable generate_clock;
     end
     
