@@ -192,7 +192,6 @@ module fib_good
 			y_r <= full_add_r;	      
 		  end
 		  else begin
-		    x_r <= y_r;
 			full_add_r = x_r + y_r;
 			if (full_add_r[OUTPUT_WIDTH]) overflow_r <= 1'b1;	      
 			y_r <= full_add_r;	      
@@ -229,7 +228,7 @@ endmodule
 module fib
   #(
     parameter int INPUT_WIDTH=6,
-    parameter int OUTPUT_WIDTH=32
+    parameter int OUTPUT_WIDTH=64
     )
    (
     input logic 		    clk,

@@ -85,7 +85,8 @@ endclass
 
 class scoreboard #(parameter int INPUT_WIDTH, parameter int OUTPUT_WIDTH);
     mailbox scoreboard_mailbox;
-    int passed, failed, reference;
+    longint passed, failed, reference; 
+	logic overflow_reference;
 
     function longint model(int n);
         longint 		    x, y, i, temp;
@@ -102,7 +103,16 @@ class scoreboard #(parameter int INPUT_WIDTH, parameter int OUTPUT_WIDTH);
         end
         return y;      
     endfunction
-
+	
+	function logic overflow_model(longint result);
+      logic [OUTPUT_WIDTH-1:0] result_truncated;
+      result_truncated = result;
+      
+      // If the truncated version is the same as the full version, there
+      // was no overflow.
+      return result_truncated != result;      
+    endfunction
+   
     task run();
         passed = 0;
         failed = 0;
@@ -110,6 +120,7 @@ class scoreboard #(parameter int INPUT_WIDTH, parameter int OUTPUT_WIDTH);
             fib_item2 #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) item;
             scoreboard_mailbox.get(item);
             reference = model(item.n);
+			overflow_reference = overflow_model(reference);
             if(item.result == reference) begin
                 $display("Time %0t [Scoreboard] Test passed for input = h%h", $time, item.n);
                 passed++;
@@ -118,6 +129,14 @@ class scoreboard #(parameter int INPUT_WIDTH, parameter int OUTPUT_WIDTH);
                 $display("Time %0t [Scoreboard] Test failed: result = %0h instead of %0h for input = h%h.", $time, item.result, reference, item.n);
                 failed ++;      
             end
+			if (item.overflow == overflow_reference) begin
+				$display("Overflow test passed (time %0t)", $time);
+				passed ++;
+			end
+			else begin
+				$display("Overflow test failed (time %0t): overflow = %0b instead of %0b.", $time, item.overflow, overflow_reference);
+				failed ++;	    
+			end
         end
     endtask
 
@@ -176,7 +195,7 @@ endclass
 module fib_real_tb;
     localparam NUM_TESTS = 1000;
     localparam INPUT_WIDTH = 6;
-    localparam OUTPUT_WIDTH = 63;
+    localparam OUTPUT_WIDTH = 64;
 
     logic clk;
 
@@ -207,5 +226,5 @@ module fib_real_tb;
     end
     
     assert property (@(posedge clk) disable iff (_if.rst) _if.go && _if.done |=> !_if.done);
-    assert property (@(posedge clk) disable iff (_if.rst) $fell(_if.done) |-> $past(_if.go,1));
+    assert property (@(posedge clk) disable iff (_if.rst) $fell(_if.done) |-> $past(_if.go,1));	
 endmodule
