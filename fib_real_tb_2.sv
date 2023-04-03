@@ -248,9 +248,7 @@ module fib_real_tb_2;
         cp_go_active: coverpoint {_if.go && !_if.done} {bins asserted={1'b1}; option.at_least = 100;}
 
         //While the circuit is actively computing a value (i.e. go has been asserted previously and done=0), the data input n should change at least 100 times
-        //cp_n_active: coverpoint _if.n {bins n_bins[] = {[0:2**INPUT_WIDTH-1]}; option.at_least = 100; option.condition = {_if.done == 0};}
-
-        
+        cp_n_active: coverpoint _if.n iff (!_if.done) {bins asserted={1'b1}; option.at_least = 100;}
     endgroup
 
     initial begin : generate_clock
