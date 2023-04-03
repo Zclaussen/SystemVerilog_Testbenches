@@ -24,6 +24,7 @@
  done : Asserted when the result output is valid. Remains asserted indefinitely
         until go is asserted again, and then is cleared on the next cycle.
  ============================================================================ */
+`timescale 1ns/10ps
 
 module fib_bad
   #(
@@ -149,7 +150,6 @@ module fib_good
    logic [$bits(result)-1:0] x_r;
    logic [$bits(result)-1:0] y_r;
    logic [$bits(result):0] full_add_r;  
-   logic [$bits(n)-1:0] check;
 
    logic [$bits(result)-1:0] result_r;   
    logic 		     done_r, overflow_r;
@@ -159,6 +159,7 @@ module fib_good
    assign overflow = overflow_r;
          
    always_ff @(posedge clk or posedge rst) begin
+      $timeformat(-9, 0, " ns");
       if (rst) begin
 		  state_r <= START;
 			result_r <= '0;
@@ -175,6 +176,7 @@ module fib_good
 	 case (state_r)
 	   START : begin
 		  done_r <= '0;
+		  overflow_r <= '0;
 		  n_r <= n;
 	      i_r <= 3;
 	      x_r <= '0;
@@ -188,13 +190,17 @@ module fib_good
 			x_r <= y_r;
 			full_add_r = x_r + y_r;
 			i_r <= i_r + 1'b1;
-			if (full_add_r[OUTPUT_WIDTH]) overflow_r <= 1'b1;	      
-			y_r <= full_add_r;	      
+			if (full_add_r[OUTPUT_WIDTH] == 1'b1) begin 
+				overflow_r <= 1'b1;	 
+            end			
+			y_r <= full_add_r;
 		  end
 		  else begin
 			full_add_r = x_r + y_r;
-			if (full_add_r[OUTPUT_WIDTH]) overflow_r <= 1'b1;	      
-			y_r <= full_add_r;	      
+			if (full_add_r[OUTPUT_WIDTH] == 1'b1) begin 
+				overflow_r <= 1'b1;	 
+            end		 
+			y_r <= full_add_r;		
 			state_r <= RESTART;
 		  end
 	   end
@@ -208,8 +214,9 @@ module fib_good
 		  done_r <= 1'b1;
 		  n_r <= n;
 	      
-	      if (go == 1'b1) begin
+	      if (go == 1'b1 && done != 1'b0) begin
 		    done_r <= '0;
+			overflow_r <= '0;
 		    i_r <= 3;
 			x_r <= '0;
 			y_r <= 1;
@@ -228,7 +235,7 @@ endmodule
 module fib
   #(
     parameter int INPUT_WIDTH=6,
-    parameter int OUTPUT_WIDTH=64
+    parameter int OUTPUT_WIDTH=16
     )
    (
     input logic 		    clk,

@@ -11,7 +11,7 @@ class fib_item3 #(INPUT_WIDTH, OUTPUT_WIDTH);
 endclass
 
 // FIB RANDOM TEST GENERATOR
-class generator #(int NUM_TESTS, int INPUT_WIDTH, int OUTPUT_WIDTH);
+class generator #(int INPUT_WIDTH, int OUTPUT_WIDTH);
     mailbox driver_mailbox;
     
     event driver_done_event;
@@ -94,16 +94,18 @@ class monitor #(parameter int INPUT_WIDTH, parameter int OUTPUT_WIDTH);
             item.result = vif.result;
             item.overflow = vif.overflow;
 
-            $display("Time %0t [Monitor]: Monitor detected result=%0d", $time, vif.result);
+            $display("Time %0t [Monitor]: Monitor detected result=%0d and overflow=%0d", $time, vif.result, vif.overflow);
             scoreboard_result_mailbox.put(item);
         end
     endtask
 endclass
 
-class scoreboard #(parameter int INPUT_WIDTH, parameter int OUTPUT_WIDTH);
+class scoreboard #(int NUM_TESTS, parameter int INPUT_WIDTH, parameter int OUTPUT_WIDTH);
     mailbox scoreboard_result_mailbox;
     mailbox scoreboard_data_mailbox;
-    int passed, failed, reference;
+    int rpassed, rfailed, opassed, ofailed;
+	logic [OUTPUT_WIDTH-1:0] reference;
+	logic overflow_check;
 
     function longint model(int n);
         longint 		    x, y, i, temp;
@@ -121,19 +123,21 @@ class scoreboard #(parameter int INPUT_WIDTH, parameter int OUTPUT_WIDTH);
         return y;      
     endfunction
 
-    /*function logic overflow_model(longint result);
+    function logic overflow_model(longint result);
       logic [OUTPUT_WIDTH-1:0] result_truncated;
       result_truncated = result;
       
       // If the truncated version is the same as the full version, there
       // was no overflow.
       return result_truncated != result;      
-    endfunction */
+    endfunction
 
     task run();
-        passed = 0;
-        failed = 0;
-        for(int i = 0; i < 1000; i++) begin
+        rpassed = 0;
+        rfailed = 0;
+		opassed = 0;
+	    ofailed = 0;
+        for(int i = 0; i < NUM_TESTS; i++) begin
             fib_item3 #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) in_item;
             fib_item3 #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) out_item;
 
@@ -141,30 +145,40 @@ class scoreboard #(parameter int INPUT_WIDTH, parameter int OUTPUT_WIDTH);
             $display("Time %0t [Scoreboard]: Received start of test for n=h%h.", $time, in_item.n);
 
             scoreboard_result_mailbox.get(out_item);
-            $display("Time %0t [Scoreboard]: Received result=%0d for n=h%h.", $time, out_item.result, in_item.n);
+            $display("Time %0t [Scoreboard]: Received result=%0d and overflow=%0d for n=h%h.", $time, out_item.result, out_item.overflow, in_item.n);
 
             reference = model(in_item.n);
+			overflow_check = overflow_model(model(in_item.n));
             if(out_item.result == reference) begin
                 $display("Time %0t [Scoreboard] Test passed for input = h%h", $time, in_item.n);
-                passed++;
+                rpassed++;
             end
             else begin
                 $display("Time %0t [Scoreboard] Test failed: result = %0d instead of %0d for input = h%h", $time, out_item.result, reference, in_item.n);
-                failed ++;      
+                rfailed ++;      
+            end
+			if(out_item.overflow == overflow_check) begin
+                $display("Time %0t [Scoreboard] Test passed for input = h%h", $time, in_item.n);
+                opassed++;
+            end
+            else begin
+                $display("Time %0t [Scoreboard] Test failed: overflow = %0d instead of %0d for input = h%h", $time, out_item.overflow, overflow_check, in_item.n);
+                ofailed ++;      
             end
         end
     endtask
 
     function void report_status();
-        $display("Test status: %0d passed, %0d failed", passed, failed);
+        $display("Test status (RESULT): %0d passed, %0d failed", rpassed, rfailed);
+		$display("Test status (OVERFLOW): %0d passed, %0d failed", opassed, ofailed);
     endfunction
 endclass
 
 class env #(int NUM_TESTS, int INPUT_WIDTH, int OUTPUT_WIDTH);
-    generator #(.NUM_TESTS(NUM_TESTS), .INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) gen1;
+    generator #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) gen1;
     driver    #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) drv1;
     monitor   #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) monitor1;
-    scoreboard #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) scoreboard1;
+    scoreboard #(.NUM_TESTS(NUM_TESTS), .INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) scoreboard1;
 
     virtual fib_if #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) vif;
 
@@ -214,7 +228,7 @@ endclass
 module fib_real_tb_2;
     localparam NUM_TESTS = 1000;
     localparam INPUT_WIDTH = 6;
-    localparam OUTPUT_WIDTH = 64;
+    localparam OUTPUT_WIDTH = 16;
 
     logic clk;
 
