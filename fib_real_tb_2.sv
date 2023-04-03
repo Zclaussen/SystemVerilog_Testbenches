@@ -1,19 +1,24 @@
-q`timescale 1ns/10ps
+`timescale 1ns/10ps
 
 // FIB TRANSACTION ITEM
-class fib_item #(INPUT_WIDTH);
-   rand bit [INPUT_WIDTH-1:0] n;
+class fib_item3 #(INPUT_WIDTH, OUTPUT_WIDTH);
+    rand bit [INPUT_WIDTH-1:0] n;
+    rand bit go;
+    bit [OUTPUT_WIDTH-1:0] result;
+    bit overflow;
+
+    constraint c_go_dist {go dist{0 :/ 90, 1:/ 10};}
 endclass
 
 // FIB RANDOM TEST GENERATOR
-class generator #(int NUM_TESTS, int INPUT_WIDTH);
+class generator #(int NUM_TESTS, int INPUT_WIDTH, int OUTPUT_WIDTH);
     mailbox driver_mailbox;
     
     event driver_done_event;
     // event generator_done_event;
 
     task run();
-        fib_item3 #(INPUT_WIDTH) item;
+        fib_item3 #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) item;
         forever begin
             item = new;
             if(!item.randomize()) $display("Randomize Failed");
@@ -75,21 +80,6 @@ class driver #(INPUT_WIDTH, OUTPUT_WIDTH);
     endtask
 endclass
 
-class fib_item2 #(INPUT_WIDTH, OUTPUT_WIDTH);
-    rand bit go;
-    bit [OUTPUT_WIDTH-1:0] result;
-    bit overflow;
-endclass
-
-class fib_item3 #(INPUT_WIDTH, OUTPUT_WIDTH);
-    rand bit [INPUT_WIDTH-1:0] n;
-    rand bit go;
-    bit [OUTPUT_WIDTH-1:0] result;
-    bit overflow;
-
-    constraint c_go_dist {go dist{0 :/ 90, 1:/ 10};}
-endclass
-
 class monitor #(parameter int INPUT_WIDTH, parameter int OUTPUT_WIDTH);
     virtual fib_if #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) vif;
     mailbox scoreboard_result_mailbox;
@@ -104,7 +94,7 @@ class monitor #(parameter int INPUT_WIDTH, parameter int OUTPUT_WIDTH);
             item.result = vif.result;
             item.overflow = vif.overflow;
 
-            $display("Time %0t [Monitor]: Monitor detected result=%0d for n=h%h.", $time, vif.result, vif.n);
+            $display("Time %0t [Monitor]: Monitor detected result=%0d", $time, vif.result);
             scoreboard_result_mailbox.put(item);
         end
     endtask
@@ -131,10 +121,19 @@ class scoreboard #(parameter int INPUT_WIDTH, parameter int OUTPUT_WIDTH);
         return y;      
     endfunction
 
+    /*function logic overflow_model(longint result);
+      logic [OUTPUT_WIDTH-1:0] result_truncated;
+      result_truncated = result;
+      
+      // If the truncated version is the same as the full version, there
+      // was no overflow.
+      return result_truncated != result;      
+    endfunction */
+
     task run();
         passed = 0;
         failed = 0;
-        for(int i = 0; i < NUM_TESTS; i++) begin
+        for(int i = 0; i < 1000; i++) begin
             fib_item3 #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) in_item;
             fib_item3 #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) out_item;
 
@@ -142,15 +141,15 @@ class scoreboard #(parameter int INPUT_WIDTH, parameter int OUTPUT_WIDTH);
             $display("Time %0t [Scoreboard]: Received start of test for n=h%h.", $time, in_item.n);
 
             scoreboard_result_mailbox.get(out_item);
-            $display("Time %0t [Scoreboard]: Received result=%0d for data=h%h.", $time, out_item.result, in_item.n);
+            $display("Time %0t [Scoreboard]: Received result=%0d for n=h%h.", $time, out_item.result, in_item.n);
 
             reference = model(in_item.n);
             if(out_item.result == reference) begin
-                $display("Time %0t [Scoreboard] Test passed for input = h%h", $time, item.n);
+                $display("Time %0t [Scoreboard] Test passed for input = h%h", $time, in_item.n);
                 passed++;
             end
             else begin
-                $display("Time %0t [Scoreboard] Test failed: result = %0d instead of %0d for input = h%h.", $time, item.result, reference, item.n);
+                $display("Time %0t [Scoreboard] Test failed: result = %0d instead of %0d for input = h%h", $time, out_item.result, reference, in_item.n);
                 failed ++;      
             end
         end
@@ -162,7 +161,7 @@ class scoreboard #(parameter int INPUT_WIDTH, parameter int OUTPUT_WIDTH);
 endclass
 
 class env #(int NUM_TESTS, int INPUT_WIDTH, int OUTPUT_WIDTH);
-    generator #(.NUM_TESTS(NUM_TESTS), .INPUT_WIDTH(INPUT_WIDTH)) gen1;
+    generator #(.NUM_TESTS(NUM_TESTS), .INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) gen1;
     driver    #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) drv1;
     monitor   #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) monitor1;
     scoreboard #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) scoreboard1;
@@ -215,7 +214,7 @@ endclass
 module fib_real_tb_2;
     localparam NUM_TESTS = 1000;
     localparam INPUT_WIDTH = 6;
-    localparam OUTPUT_WIDTH = 16;
+    localparam OUTPUT_WIDTH = 64;
 
     logic clk;
 
@@ -224,12 +223,31 @@ module fib_real_tb_2;
     fib_if #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) _if (.clk(clk));
     fib #(.INPUT_WIDTH(INPUT_WIDTH), .OUTPUT_WIDTH(OUTPUT_WIDTH)) DUT (.clk(clk), .rst(_if.rst), .go(_if.go), .done(_if.done), .n(_if.n), .result(_if.result), .overflow(_if.overflow));
 
+    covergroup cg @(posedge clk);
+        //Overflow should be asserted at least 10 times
+        cp_overflow: coverpoint _if.overflow {bins asserted={1'b1}; option.at_least = 10;}
+
+        //2**INPUT_WIDTH values of n tested at least once
+        cp_n: coverpoint _if.n {bins n_bins[] = {[0:2**INPUT_WIDTH-1]};}
+
+        //Go should be asserted at least 100 times when the circuit is actively computing a value (i.e., go has been asserted previously and done = 0)
+        cp_go_active: coverpoint {_if.go && !_if.done} {bins asserted={1'b1}; option.at_least = 100;}
+
+        //While the circuit is actively computing a value (i.e. go has been asserted previously and done=0), the data input n should change at least 100 times
+        //cp_n_active: coverpoint _if.n {bins n_bins[] = {[0:2**INPUT_WIDTH-1]}; option.at_least = 100; option.condition = {_if.done == 0};}
+
+        
+    endgroup
+
     initial begin : generate_clock
         clk = 1'b0;
         while(1) #5 clk = ~clk;
     end
 
+    cg cg_inst;
+
     initial begin
+        cg_inst = new();
         $timeformat(-9, 0, " ns");
 
         _env.vif = _if;
@@ -242,6 +260,8 @@ module fib_real_tb_2;
         @(posedge clk);
 
         _env.run();
+
+        $display("Coverage = %0.2f %%", cg_inst.get_inst_coverage());
         disable generate_clock;
     end
     
